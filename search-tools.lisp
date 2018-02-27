@@ -1,29 +1,5 @@
 ;;;; A Set of Searching Tools
 
-(defvar *dbg-ids* nil "Identifiers used by dbg")
-
-(defun dbg (id format-string &rest args)
-  "Print debugging info if (DEBUG ID) has been specified."
-  (when (member id *dbg-ids*)
-    (fresh-line *debug-io*)
-    (apply #'format *debug-io* format-string args)))
-
-(defun dbg-indent (id indent format-string &rest args)
-  "Print indented debugging info if (DEBUG ID) has been specified."
-  (when (member id *dbg-ids*)
-    (fresh-line *debug-io*)
-    (dotimes (i indent) (princ "  " *debug-io*))
-    (apply #'format *debug-io* format-string args)))
-
-(defun debug (&rest ids)
-  "Start dbg output on the given ids."
-  (setf *dbg-ids* (union ids *dbg-ids*)))
-
-(defun undebug (&rest ids)
-  "Stop dbg on the ids. With no ids, stop dbg altogether."
-  (setf *dbg-ids* (if (null ids) nil
-                      (set-difference *dbg-ids* ids))))
-
 (defun tree-search (states goal-p successors combiner)
   "Find a state that satisfies goal-p. Start with states and search according to successors and combiner."
   (dbg :search "~&;; Search: ~a" states)
@@ -39,11 +15,11 @@
 
 (defun quad-tree (x) (list (* 4 x) (+ 1 (* 4 x)) (+ 2 (* 4 x)) (+ 3 (*  4 x))))
 
-(defun finit-binary-tree (n)
+(defun finite-binary-tree (n)
   "Return a successor function that generates a binary tree with n nodes."
   (lambda (x)
     (remove-if (lambda (child) (> child n))
-               (binary-tree))))
+               (binary-tree x))))
 
 (defun is (value) #'(lambda (x) (eql x value)))
 
@@ -56,3 +32,31 @@
 (defun breadth-first-search (start goal-p successors)
   "Search old states first until goal is reached."
   (tree-search (list start) goal-p successors #'prepend))
+
+(defun diff (num)
+  "Return the function that finds the difference from num."
+  (lambda (x) (abs (- x num))))
+
+(defun price-is-right (price)
+  "Return a function that measures the difference from price, but gives a big penalty for going over price."
+  (lambda (x) (if (> x price)
+                  most-positive-fixnum
+                  (- price x))))
+
+(defun sorter (cost-fn)
+  "Return a combiner function that sorts according to cost-fn."
+  (lambda (new old)
+    (sort (append new old) #'< :key cost-fn)))
+
+(defun best-first-search (start goal-p successors cost-fn)
+  "Search lowest cost states first until goal is reached."
+  (tree-search (list start) goal-p successors (sorter cost-fn)))
+
+(defun beam-search (start goal-p successors cost-fn beam-width)
+  "Search highest scoring states first until goal is reached, but never consider more than beam-width states at a time."
+  (tree-search (list start) goal-p successors
+               (lambda (old new)
+                 (let ((sorted (funcall (sorter cost-fn) old new)))
+                   (if (> beam-width (length sorted))
+                       sorted
+                       (subseq sorted 0 beam-width))))))
