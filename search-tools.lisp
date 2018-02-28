@@ -21,7 +21,9 @@
     (remove-if (lambda (child) (> child n))
                (binary-tree x))))
 
-(defun is (value) #'(lambda (x) (eql x value)))
+(defun is (value &key (key #'identity) (test #'eql))
+  "Returns a predicate that tests for a given value."
+  (lambda (path) (funcall test value (funcall key path))))
 
 (defun depth-first-search (start goal-p successors)
   "Search new states first until goal is reached."

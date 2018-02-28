@@ -13,6 +13,41 @@
     (Jacksonville 81.40 30.22) (Victoria      123.21 48.25)
     (Kansas-City  94.35 39.06) (Wilmington     77.57 34.14)))
 
+(defstruct (path (:print-function print-path))
+    state (previous nil) (cost-so-far 0) (total-cost 0))
+
+(defun print-path (path &optional (stream t) depth)
+  (declare (ignore depth))
+  (format stream "#<Path to ~a cost ~,1f>"
+          (path-state path) (path-total-cost path)))
+
+(defun map-path (fn path)
+  "Call fn on each state in the path, collecting results."
+  (if (null path)
+      nil
+      (cons (funcall fn (path-state path))
+            (map-path fn (path-previous path)))))
+
+(defun show-city-path (path &optional (stream t))
+  "Show the length of a path, and the cities along it."
+  (format stream "#<Path ~,1f km: ~{~:(~a~)~^ - ~}>"
+          (path-total-cost path)
+          (reverse (map-path #'city-name path)))
+  (values))
+
+(defun path-saver (successors cost-fn cost-left-fn)
+  (lambda (old-path)
+    (let ((old-state (path-state old-path)))
+      (mapcar #'(lambda (new-state)
+                  (let ((old-cost (+ (path-cost-so-far old-path)
+                                     (funcall cost-fn old-state new-state))))
+                    (make-path :state new-state
+                               :previous old-path
+                               :cost-so-far old-cost
+                               :total-cost (+ old-cost (funcall cost-left-fn
+                                                                new-state)))))
+              (funcall successors old-state)))))
+
 (defun neighbors (city)
   "Find all cities within 1000 kilometers."
   (remove-if-not #'(lambda (c)
@@ -29,6 +64,16 @@
   (beam-search start (is dest) #'neighbors
                #'(lambda (c) (air-distance c dest))
                1))
+
+(defun trip2 (start dest &optional (beam-width 1))
+  "Search for the best path from start to dest."
+  (beam-search
+   (make-path :state start)
+   (is dest :key #'path-state)
+   (path-saver #'neighbors #'air-distance
+               #'(lambda (c) (air-distance c dest)))
+   #'path-total-cost
+   beam-width))
 
 (defconstant earth-diameter 12765.0
   "Diameter of planet earth in kilometers.")
