@@ -145,3 +145,100 @@
   (cond ((= n 0) (assert (not (eql p 0))) 1)
 	((integerp p) (expt p n))
 	(t (poly*poly p (poly^n p (- n 1))))))
+
+(defun deriv-poly (p x)
+  "Return the derivative, dp/dx, of the polynomial p."
+  ;; If p is a number or a polynomial with main-var > x,
+  ;; then p is free of x, and the derivative is zero;
+  ;; otherwise do real work.
+  ;; But first, make sure X is a simple variable,
+  ;; of the form #(X 0 1).
+  (assert (and (typep x 'polynomial)
+	       (= (degree x) 1)
+	       (eql (coef x 0) 0)
+	       (eql (coef x 1) 1)))
+  (cond
+    ((numberp p) 0)
+    ((var> (main-var p) (main-var x)) 0)
+    ((var= (main-var p) (main-var x))
+     ;; d(a + bx + cx^2 + dx^3)/dx = b + 2cx + 3dx^2
+     ;; So, shift the sequence p over by 1, then
+     ;; put x back in, and multiply by the exponents
+     (let ((r (subseq p 1)))
+       (setf (main-var r) (main-var x))
+       (loop for i from 1 to (degree r) do
+	    (setf (coef r i) (poly*poly (+ i 1) (coef r i))))
+       (normalize-poly r)))
+    (t
+     ;; Otherwise some coefficient may contain x. Ex:
+     ;; d(z + 3x + 3zx^2 + z^2x^3)/dz
+     ;; = 1 + 0 + 3x^2 + 2zx^3
+     ;; So copy p, and differentiate the coefficients.
+     (let ((r (copy-poly p)))
+       (loop for i from 0 to (degree p) do
+	    (setf (coef r i) (deriv-poly (coef r i) x)))
+       (normalize-poly r)))))
+
+(defun prefix->infix (exp)
+  "Translate prefix to infix expressions.
+  Handles operators with any number of args."
+  (if (atom exp)
+      exp
+      (intersperse
+       (exp-op exp)
+       (mapcar #'prefix->infix (exp-args exp)))))
+
+(defun intersperse (op args)
+  "Place op between each element of args.
+  Ex: (intersperse '+ '(a b c) => '(a + b + c)"
+  (if (= (length args) 1)
+      (first args)
+      (rest (loop for arg in args
+	       collect op
+	       collect arg))))
+
+(defun canon->prefix (p)
+  "Convert a canonical polynomial to a lisp expression."
+  (if (numberp p)
+      p
+      (args->prefix
+       '+ 0
+       (loop for i from (degree p) downto 0
+	  collect (args->prefix
+		   '* 1
+		   (list (canon->prefix (coef p i))
+			 (exponent->prefix
+			  (main-var p) i)))))))
+
+(defun exponent->prefix (base exponent)
+  "Convert canonical base^exponent to prefix form."
+  (case exponent
+    (0 1)
+    (1 base)
+    (t `(^ ,base ,exponent))))
+
+(defun args->prefix (op identity args)
+  "Convert arg1 op arg2 op ... to prefix from."
+  (let ((useful-args (remove identity args)))
+    (cond ((null useful-args) identity)
+	  ((and (eq op '*) (member 0 args)) 0)
+	  ((= (length args) 1) (first useful-args))
+	  (t (cons op (mappend
+		       (lambda (exp)
+			 (if (starts-with exp op)
+			     (exp-args exp)
+			     (list exp)))
+		       useful-args))))))
+
+(defun canon (infix-exp)
+  "Canonicalize argument and convert it back to infix"
+  (prefix->infix
+   (canon->prefix
+    (prefix->canon
+     (infix->prefix infix-exp)))))
+
+(defun canon-simplifier ()
+  "Read an expression, canonicalize it, and print the result."
+  (loop
+     (print 'canon>)
+     (print (canon (read)))))
